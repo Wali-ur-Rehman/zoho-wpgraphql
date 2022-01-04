@@ -546,7 +546,7 @@ add_action( 'graphql_register_types', function() {
 	]);
 
 //ok
-	register_graphql_mutation( 'ZohoCreateUser', [
+		register_graphql_mutation( 'ZohoCreateUser', [
 		'inputFields' => [
 			'name' => [
 				'type' => [ 'non_null' => 'String' ],
@@ -579,7 +579,6 @@ add_action( 'graphql_register_types', function() {
 			// $registered=$wpdb->insert('wp_users', $input);
 			
 			$registered=wp_create_user($input['name'],$input['password'],$input['email']);
-			$input['id']=base64_encode($registered);
 			if($registered){
 				$wpdb->update('wp_users', array('created_by'=>$created_by, 'role'=>$input['user_role']), array( 'id' => $registered ));
 				return ['zohoUser' => $input];
@@ -589,8 +588,7 @@ add_action( 'graphql_register_types', function() {
 						
 		}
 	]);
-
-	register_graphql_mutation( 'ZohoUpdateUser', [
+    register_graphql_mutation( 'ZohoUpdateUser', [
 		'inputFields' => [
 			'id'=>[
 				'type'=>['non_null'=> 'String']
@@ -600,21 +598,31 @@ add_action( 'graphql_register_types', function() {
 			],
 		],
 		'outputFields' => [
-			'zohoUser' => [
-				'type' =>'zohoUser'
-			]
+			'userId' => [
+				'type' =>'String'
+			],
+            'status' => [
+				'type' =>'String'
+			] 
 		],
 		'mutateAndGetPayload' => function( $input ) {
 			$id = base64_decode($input['id']); // the result is not a stringified number, neither printable
-			$string=str_replace('user:', '',$id);
+			$string=str_replace('user:', '',$id  );
 			$id= json_decode($string);
 			$input['id']=base64_encode($id);
+         
 			global $wpdb;
-			if($registered){
-				$wpdb->update('wp_users', array('role'=>$input['user_role']), array( 'id' => $id ));
-				return ['zohoUser' => $input];
+			$updated=$wpdb->update('wp_users', array('role'=>$input['user_role']), array( 'id' => $id ));
+            if($updated){
+				return [
+                	'userId' =>$input['id'],
+                	'status'=>'User Role Updated'
+                ];
 			}else {
-				return ['zohoUser' => 'Not Updated'];
+				return [
+                	'userId' => 'User Not Found',
+                	'status'=>'Not Updated'	
+                ];
 			}					
 		}
 	]);
@@ -1075,7 +1083,7 @@ function register_mutations_and_query_models() {
 	] );
 	register_graphql_object_type( 'zohoUser', [
 		'fields' => [
-			'id' => [
+        	'id' => [
 				'type' => 'String',
 		  	],
 		  	'created_by' => [
@@ -1287,12 +1295,10 @@ add_action( 'graphql_register_types', function() {
 					$user->created_by=base64_encode($user->created_by);
 					$user->name=$user->user_nicename;
 					$user->email=$user->user_email;
-					$user->user_role=$user->role;
+                    $user->user_role=$user->role;
 				}
 				return $users;
 			},	
 		],
 	);
 });
-
-
