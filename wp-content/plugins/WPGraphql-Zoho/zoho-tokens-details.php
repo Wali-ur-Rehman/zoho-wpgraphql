@@ -545,8 +545,8 @@ add_action( 'graphql_register_types', function() {
 		}
 	]);
 
-//ok
-		register_graphql_mutation( 'ZohoCreateUser', [
+
+	register_graphql_mutation( 'ZohoCreateUser', [
 		'inputFields' => [
 			'name' => [
 				'type' => [ 'non_null' => 'String' ],
@@ -567,7 +567,10 @@ add_action( 'graphql_register_types', function() {
 		'outputFields' => [
 			'zohoUser' => [
 				'type' =>'zohoUser'
-			] 
+			],
+			'status'=>[
+				'type'=>'String'
+			],
 		],
 		'mutateAndGetPayload' => function( $input ) {
 			$created_by = base64_decode($input['created_by']); // the result is not a stringified number, neither printable
@@ -576,16 +579,18 @@ add_action( 'graphql_register_types', function() {
 			$input['created_by']=$created_by;
 
 			global $wpdb;
-			// $registered=$wpdb->insert('wp_users', $input);
-			
-			$registered=wp_create_user($input['name'],$input['password'],$input['email']);
-			if($registered){
-				$wpdb->update('wp_users', array('created_by'=>$created_by, 'role'=>$input['user_role']), array( 'id' => $registered ));
-				return ['zohoUser' => $input];
+			if(email_exists( $input['email'] ))
+			{
+				return ['status' => 'Email already Exists'];
 			}else {
-				return ['zohoUser' => 'Not registered'];
-			}
-						
+				$registered=wp_create_user($input['name'],$input['password'],$input['email']);
+				if($registered){
+					$wpdb->update('wp_users', array('created_by'=>$created_by, 'role'=>$input['user_role']), array( 'id' => $registered ));
+					return ['zohoUser' => $input];
+				}else {
+					return ['status' => 'Something is Wrong'];
+				}
+			}	
 		}
 	]);
     register_graphql_mutation( 'ZohoUpdateUser', [
@@ -626,6 +631,85 @@ add_action( 'graphql_register_types', function() {
 			}					
 		}
 	]);
+
+	//ok
+
+	register_graphql_mutation( 'ZohoCreateTicketComment', [
+		'inputFields' => [
+			'id'=>[
+				'type'=>['non_null'=> "String"]
+			],
+			'content'=>[
+				'type'=> ['non_null' => 'String']
+			],
+			'isPublic'=>[
+				'type'=> ['non_null' => 'Boolean']
+			],
+			'attachmentIds'=>[
+				'type'=>  'String'
+			],
+			'contentType'=>[
+				'type'=> ['non_null' => 'String']
+			],
+		],
+		'outputFields' => [
+			'status' => [
+				'type' =>'Integer'
+			] ,
+			'error' => [
+				'type' => 'String'
+			],
+			'message' => [
+				'type' => 'String'
+			],
+			'getZohoTicketComment'=>['type'=>'zohoTicketComment'],
+			'inserted' =>['type' => 'Boolean'],
+			'size' =>['type' => 'string']
+		],
+		'mutateAndGetPayload' => function( $input ) {
+
+            $zoho_response = CallAPIs('POST', "https://desk.zoho.com/api/v1/tickets/".$input['id']."/comments", $input);
+		
+			// $data['size']=$zoho_response['body']->attachments[0]->size;
+			// $data['href']=$zoho_response['body']->attachments[0]->href;
+			// $data['imgName']=$zoho_response['body']->attachments[0]->name;
+			// $data['imgid']=$zoho_response['body']->attachments[0]->id;
+			// return ['size'=>$data['imgid']];
+			if($zoho_response['status']==200)
+			{
+				$data=array();
+				$data['id']=$zoho_response['body']->id;
+				$data['isPublic']=$zoho_response['body']->isPublic;
+				$data['commentedTime']=$zoho_response['body']->commentedTime;
+				$data['contentType']=$zoho_response['body']->contentType;
+				$data['content']=$zoho_response['body']->content;
+				$data['commenterId']=$zoho_response['body']->commenterId;
+				$data['commentorName']=$zoho_response['body']->commenter->name;
+				$data['photoURL']=$zoho_response['body']->commenter->name;
+				$data['roleName']=$zoho_response['body']->commenter->roleName;
+				$data['type']=$zoho_response['body']->commenter->type;
+				$data['email']=$zoho_response['body']->commenter->email;
+				global $wpdb;
+				$inserted=$wpdb->insert('wp_zoho_tickets_comments', $data);
+				return [
+					'error' => null,
+					'message'=> 'Success',
+					'status' => $zoho_response['status'],
+					'getZohoTicketComment'=>$zoho_response['body'],
+					'inserted' => $inserted
+				];
+			}
+			else{
+				return [
+					'error' => $zoho_response['error'],
+					'message'=> $zoho_response['message'],
+					'status' => $zoho_response['status'],
+					'ZohoTicketCommet' => Null,
+				];
+			}		
+		}
+	]);
+
 } );
 
 
@@ -785,7 +869,8 @@ function CallAPIs($method, $url, $data = false)
 	$headers = [
 		'orgId: 659082188',
 		'Authorization:Zoho-oauthtoken '.$access_token.'',
-		'Content-Type: application/json'
+		'Content-Type: application/json',
+		// 'Content-Type:multipart/form-data'
 	];
 
 	switch ($method)
@@ -1100,6 +1185,36 @@ function register_mutations_and_query_models() {
 			],
 		],
 	] );
+	register_graphql_object_type( 'zohoTicketComment', [
+		'fields' => [
+        	'id' => ['type' => 'String'],
+		  	'isPublic' => ['type' => 'String'],
+		  	'commentedTime' => ['type' => 'String'],
+			'contentType' => ['type' => 'String'],
+			'content' => ['type' => 'String'],
+			'commenterId' => ['type' => 'String'],
+			'commenter' => ['type' => 'commenter'],
+		],
+	] );
+	register_graphql_object_type( 'attachments', [
+		'fields' => [
+			'size'=>['type'=>'string'],
+			'href'=>['type'=>'string'],
+			'name'=>['type'=>'string'],
+			'id'=>['type'=>'String']
+		],
+	] );
+	register_graphql_object_type( 'commenter', [
+		'fields' => [
+			'firstName'=>['type'=>'string'],
+			'lastName'=>['type'=>'string'],
+			'photoURL'=>['type'=>'string'],
+			'name'=>['type'=>'String'],
+			'roleName'=>['type'=>'string'],
+			'type'=>['type'=>'string'],
+			'email'=>['type'=>'String']
+		],
+	] );
 };
 
 //zoho contacts and zoho tickets
@@ -1118,7 +1233,7 @@ function RefreshToken()
 			$redirect_url='http://localhost:8000';
 			// $url='https://accounts.zoho.com/oauth/v2/token?refresh_token=1000.0964963bc54f8e8055150db7d1abda73.d33f36aedda0a0f05eae8098af3e4dc1&grant_type=refresh_token&client_id=1000.HNT5KUX4GBCXFIKXXTL88O8NEPRFRD&client_secret=67951b0d42f4a14b96ade319998392a0be60321d52&redirect_uri=http://localhost:8000&scope=Desk.tickets.ALL,Desk.contacts.ALL';
 
-			$url='https://accounts.zoho.com/oauth/v2/token?refresh_token='.$result->refresh_token.'&grant_type=refresh_token&client_id='.$result->client_id.'&client_secret='.$result->client_secret.'&redirect_uri='.$redirect_url.'&scope='.'Desk.tickets.ALL,Desk.contacts.ALL'.'';
+			$url='https://accounts.zoho.com/oauth/v2/token?refresh_token='.$result->refresh_token.'&grant_type=refresh_token&client_id='.$result->client_id.'&client_secret='.$result->client_secret.'&redirect_uri='.$redirect_url.'&scope='.'Desk.contacts.WRITE,Desk.contacts.READ,Desk.tickets.ALL,Desk.settings.READ,Desk.basic.READ,Desk.tickets.UPDATE,Desk.events.ALL,Desk.basic.READ,Desk.basic.CREATE'.'';
 			curl_setopt($curl, CURLOPT_URL, $url);
 			curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
 			curl_setopt($curl, CURLOPT_HEADER, true);    // we want headers
@@ -1286,13 +1401,10 @@ add_action( 'graphql_register_types', function() {
 			'type'=>[ 'list_of' => 'zohoUser'],
 			'resolve' => function($root, $args, $context, $info ) {
 				global $wpdb;
-				$user_id = base64_decode($args['userId']); // the result is not a stringified number, neither printable
-				$string=str_replace('user:', '',$user_id  );
-				$user_id= json_decode($string);
 				$users=$wpdb->get_results('SELECT * FROM wp_users WHERE role="editor" OR role="admin" ');
 				foreach($users as $user){
-					$user->id=base64_encode($user->ID);
-					$user->created_by=base64_encode($user->created_by);
+					$user->id=base64_encode('user:'.$user->ID);
+					$user->created_by=base64_encode('user:'.$user->created_by);
 					$user->name=$user->user_nicename;
 					$user->email=$user->user_email;
                     $user->user_role=$user->role;
@@ -1302,3 +1414,119 @@ add_action( 'graphql_register_types', function() {
 		],
 	);
 });
+
+
+//getAdminsAndEditorsByUserId
+add_action( 'graphql_register_types', function() {
+	register_graphql_field( 
+		'RootQuery', 
+		'getAdminsAndEditorsByUserId', [
+			'type'=>[ 'list_of' => 'zohoUser'],
+			'args' => [
+				'createdBy' => [
+					'type' => ['non_null'=>'String'],
+				],
+			],
+			'resolve' => function($root, $args, $context, $info ) {
+				global $wpdb;
+				$created_by = base64_decode($args['createdBy']); // the result is not a stringified number, neither printable
+				$string=str_replace('user:', '',$created_by  );
+				$created_by= json_decode($string);
+				$users=$wpdb->get_results('SELECT * FROM wp_users WHERE (role="editor" OR role="admin") AND created_by='.$created_by.' ');
+				foreach($users as $user){
+					$user->id=base64_encode('user:'.$user->ID);
+					$user->created_by=base64_encode('user:'.$user->created_by);
+					$user->name=$user->user_nicename;
+					$user->email=$user->user_email;
+                    $user->user_role=$user->role;
+				}
+				return $users;
+			},	
+		],
+	);
+});
+
+// To Upload Image
+add_action( 'rest_api_init', 'upload_zoho_image' );
+function upload_zoho_image(){
+  register_rest_route('/api/v1/','uploads',array(
+    'methods'=>'POST','callback'=>'attachments'
+  ));
+}
+function attachments( $request )
+{
+	// $data=$request->get_file_params();
+	$name=$_FILES['file']['name'];
+	$tempPath=$_FILES['file']['tmp_name'];
+	// $type=$_FILES['image']['type'];
+	// $fileExt = strtolower(pathinfo($name,PATHINFO_EXTENSION)); // get image extension
+	move_uploaded_file($tempPath,$name); // move file from system temporary path to our upload folder path 
+	$image="https://22f7-2400-adc5-1c7-6a00-4922-8be3-c256-cdc0.ngrok.io//gatsby/" .$name;
+
+	$zoho_response = CallAPIsforImages('POST', "https://desk.zoho.com/api/v1/uploads",$image );
+	// curl_setopt($ch,CURLOPT_URL, $url);
+ 	return [
+		'error' => $zoho_response['error'],
+ 		'message'=> $zoho_response['message'],
+ 		'status' => $zoho_response['status'],
+		'data' =>  $zoho_response['body'],
+		'file'=> $image
+	];
+    // $params = $request->get_body();
+
+    return new WP_REST_Response( $params, 200 );
+}
+
+
+function CallAPIsforImages($method, $url, $image = false)
+{	
+	$data=file_get_contents($image);
+	$curl = curl_init();
+	$access_token='';
+	global $wpdb;
+	$results = $wpdb->get_results( 'SELECT * FROM wp_zoho_credentials');
+	if ($results)
+	{
+		foreach($results as $result)
+		{
+			$access_token = $result->access_token;
+			break;
+		}
+	}
+	$headers = [
+		'orgId: 659082188',
+		'Authorization:Zoho-oauthtoken '.$access_token.'',
+		'Content-Type:multipart/form-data'
+	];
+
+	curl_setopt($curl, CURLOPT_POST, 1);
+	curl_setopt($curl, CURLOPT_HTTPHEADER, $headers);
+	curl_setopt($curl, CURLOPT_POSTFIELDS, $data);
+
+	// curl_setopt($ch, CURLOPT_HEADER, 0);
+    // curl_setopt($curl, CURLOPT_BINARYTRANSFER,1);
+	curl_setopt($curl, CURLOPT_URL, $url);
+	curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
+	curl_setopt($curl, CURLOPT_HEADER, true);    // we want headers
+
+	$result = curl_exec($curl);
+	$httpcode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+	$header_size = curl_getinfo($curl, CURLINFO_HEADER_SIZE);
+	$header = substr($result, 0, $header_size);
+	$body = substr($result, $header_size);
+	 curl_close($curl);
+   
+   
+	if($httpcode==200)
+	{
+		$response['status']=$httpcode;
+		$response['body']=json_decode($body);
+		return $response;
+	}else{
+		$response['status']=$httpcode;
+		$response['error']=json_decode($body)->errorCode;
+		$response['message']=json_decode($body)->message;
+		return $response;
+	}
+}
+
