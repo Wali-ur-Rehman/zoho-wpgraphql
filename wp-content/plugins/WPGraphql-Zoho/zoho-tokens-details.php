@@ -476,7 +476,7 @@ add_action( 'graphql_register_types', function() {
 					'message'=> $zoho_response['message'],
 					'zohoTicket' =>null,
 					'status' => $zoho_response['status'],
-					'contactId' => 	$client_id
+					// 'contactId' => 	$client_id
 				];
 			}
 		}
@@ -530,7 +530,7 @@ add_action( 'graphql_register_types', function() {
 					'message'=> 'Success',
 					'zohoTicket' =>$zoho_response['body'],
 					'status' => $zoho_response['status'],
-					'contactId' => $result[0]->contactId
+					// 'contactId' => $result[0]->contactId
 				];
 			}
 			else{
@@ -539,7 +539,7 @@ add_action( 'graphql_register_types', function() {
 					'message'=> $zoho_response['message'],
 					'zohoTicket' =>null,
 					'status' => $zoho_response['status'],
-					'contactId' => 	$client_id
+					// 'contactId' => 	$client_id
 				];
 			}
 		}
@@ -749,12 +749,12 @@ function insertZohoCredentialDetails($input)
 	}
 	return $zoho;
 }
-function updateZohoContacts($input)
-{
-  	global $wpdb;
-	$wpdb->update('wp_zoho_contacts', $input, array( 'user_id' => $user_id ));
-	return $input;
-}
+// function updateZohoContacts($input)
+// {
+//   	global $wpdb;
+// 	$wpdb->update('wp_zoho_contacts', $input, array( 'user_id' => $user_id ));
+// 	return $input;
+// }
 
 
 function insertZohoContacts($input)
@@ -1455,33 +1455,7 @@ function upload_zoho_image(){
 }
 function attachments( $request )
 {
-	// $data=$request->get_file_params();
-	$name=$_FILES['file']['name'];
-	$tempPath=$_FILES['file']['tmp_name'];
-	// $type=$_FILES['image']['type'];
-	// $fileExt = strtolower(pathinfo($name,PATHINFO_EXTENSION)); // get image extension
-	move_uploaded_file($tempPath,$name); // move file from system temporary path to our upload folder path 
-	$image="https://22f7-2400-adc5-1c7-6a00-4922-8be3-c256-cdc0.ngrok.io//gatsby/" .$name;
-
-	$zoho_response = CallAPIsforImages('POST', "https://desk.zoho.com/api/v1/uploads",$image );
-	// curl_setopt($ch,CURLOPT_URL, $url);
- 	return [
-		'error' => $zoho_response['error'],
- 		'message'=> $zoho_response['message'],
- 		'status' => $zoho_response['status'],
-		'data' =>  $zoho_response['body'],
-		'file'=> $image
-	];
-    // $params = $request->get_body();
-
-    return new WP_REST_Response( $params, 200 );
-}
-
-
-function CallAPIsforImages($method, $url, $image = false)
-{	
-	$data=file_get_contents($image);
-	$curl = curl_init();
+	$file = new CURLFile($_FILES['file']['tmp_name'], $_FILES['file']['type'], $_FILES['file']['name']);
 	$access_token='';
 	global $wpdb;
 	$results = $wpdb->get_results( 'SELECT * FROM wp_zoho_credentials');
@@ -1498,35 +1472,74 @@ function CallAPIsforImages($method, $url, $image = false)
 		'Authorization:Zoho-oauthtoken '.$access_token.'',
 		'Content-Type:multipart/form-data'
 	];
-
-	curl_setopt($curl, CURLOPT_POST, 1);
-	curl_setopt($curl, CURLOPT_HTTPHEADER, $headers);
-	curl_setopt($curl, CURLOPT_POSTFIELDS, $data);
-
-	// curl_setopt($ch, CURLOPT_HEADER, 0);
-    // curl_setopt($curl, CURLOPT_BINARYTRANSFER,1);
-	curl_setopt($curl, CURLOPT_URL, $url);
-	curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
-	curl_setopt($curl, CURLOPT_HEADER, true);    // we want headers
-
+	$curl=curl_init();
+		curl_setopt_array($curl, array(
+		CURLOPT_URL => 'https://desk.zoho.com/api/v1/uploads',
+		CURLOPT_RETURNTRANSFER => true,
+		CURLOPT_ENCODING => '',
+		CURLOPT_MAXREDIRS => 10,
+		CURLOPT_TIMEOUT => 0,
+		CURLOPT_FOLLOWLOCATION => true,
+		CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+		CURLOPT_CUSTOMREQUEST => 'POST',
+		CURLOPT_POSTFIELDS => array('file'=> $file),
+		CURLOPT_HTTPHEADER =>$headers
+	));
 	$result = curl_exec($curl);
-	$httpcode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
-	$header_size = curl_getinfo($curl, CURLINFO_HEADER_SIZE);
-	$header = substr($result, 0, $header_size);
-	$body = substr($result, $header_size);
-	 curl_close($curl);
-   
-   
-	if($httpcode==200)
-	{
-		$response['status']=$httpcode;
-		$response['body']=json_decode($body);
-		return $response;
-	}else{
-		$response['status']=$httpcode;
-		$response['error']=json_decode($body)->errorCode;
-		$response['message']=json_decode($body)->message;
-		return $response;
-	}
+	curl_close($curl);
+	return  json_decode($result);
 }
+
+
+// function CallAPIsforImages($method, $url, $image = false)
+// {	
+// 	// $data=file_get_contents($image);
+// 	$curl = curl_init();
+// 	$access_token='';
+// 	global $wpdb;
+// 	$results = $wpdb->get_results( 'SELECT * FROM wp_zoho_credentials');
+// 	if ($results)
+// 	{
+// 		foreach($results as $result)
+// 		{
+// 			$access_token = $result->access_token;
+// 			break;
+// 		}
+// 	}
+// 	$headers = [
+// 		'orgId: 659082188',
+// 		'Authorization:Zoho-oauthtoken '.$access_token.'',
+// 		'Content-Type:multipart/form-data'
+// 	];
+
+// 	curl_setopt($curl, CURLOPT_POST, 1);
+// 	curl_setopt($curl, CURLOPT_HTTPHEADER, $headers);
+// 	curl_setopt($curl, CURLOPT_POSTFIELDS, $image);
+// 	// curl_setopt($curl, CURLOPT_CUSTOMREQUEST, "POST");
+// 	// curl_setopt($ch, CURLOPT_HEADER, 0);
+//     // curl_setopt($curl, CURLOPT_BINARYTRANSFER,1);
+// 	curl_setopt($curl, CURLOPT_URL, $url);
+// 	curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
+// 	curl_setopt($curl, CURLOPT_HEADER, true);    // we want headers
+
+// 	$result = curl_exec($curl);
+// 	$httpcode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+// 	$header_size = curl_getinfo($curl, CURLINFO_HEADER_SIZE);
+// 	$header = substr($result, 0, $header_size);
+// 	$body = substr($result, $header_size);
+// 	 curl_close($curl);
+   
+   
+// 	if($httpcode==200)
+// 	{
+// 		$response['status']=$httpcode;
+// 		$response['body']=json_decode($body);
+// 		return $response;
+// 	}else{
+// 		$response['status']=$httpcode;
+// 		$response['error']=json_decode($body)->errorCode;
+// 		$response['message']=json_decode($body)->message;
+// 		return $response;
+// 	}
+// }
 
